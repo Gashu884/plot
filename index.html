@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Linear Regression フロントエンド</title>
+  <style>
+    :root {
+      --bg: #0f172a;      /* slate-900 */
+      --panel: #111827;   /* gray-900 */
+      --muted: #94a3b8;   /* slate-400 */
+      --text: #e5e7eb;    /* gray-200 */
+      --accent: #38bdf8;  /* sky-400 */
+      --ok: #22c55e;      /* green-500 */
+      --err: #ef4444;     /* red-500 */
+      --border: #1f2937;  /* gray-800 */
+    }
+    html, body { height: 100%; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Noto Sans JP, "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", sans-serif;
+      background: linear-gradient(180deg, #0b1020, #0f172a 40% 100%);
+      color: var(--text);
+    }
+    .container { max-width: 1080px; margin: 24px auto; padding: 0 16px; }
+    header { display:flex; align-items:center; gap:12px; margin-bottom: 16px; }
+    header h1 { font-size: 1.5rem; margin: 0; letter-spacing: .02em; }
+    header .badge { font-size: .8rem; color: var(--muted); border: 1px solid var(--border); padding: 2px 8px; border-radius: 999px; }
+
+    .grid { display: grid; grid-template-columns: 1.2fr .8fr; gap: 16px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+    .card { background: rgba(17,24,39,.7); border: 1px solid var(--border); border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,.25); overflow: hidden; }
+    .card h2 { margin: 0; font-size: 1rem; letter-spacing: .04em; padding: 14px 16px; border-bottom: 1px solid var(--border); background: rgba(2,6,23,.35); }
+    .card .body { padding: 16px; }
+
+    label { display:block; font-size: .9rem; color: var(--muted); margin: 12px 0 6px; }
+    input[type="text"], textarea { width: 100%; background: #0b1220; color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; outline: none; transition: border .2s ease; }
+    input[type="text"]:focus, textarea:focus { border-color: var(--accent); }
+    textarea { resize: vertical; min-height: 160px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: .95rem; line-height: 1.4; }
+
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+    .actions { display:flex; gap:10px; flex-wrap: wrap; margin-top: 14px; }
+    button { appearance: none; border: 1px solid var(--border); background: #0b1220; color: var(--text); padding: 10px 14px; border-radius: 12px; cursor: pointer; font-weight: 600; letter-spacing: .01em; }
+    button.primary { background: linear-gradient(135deg, #0ea5e9, #38bdf8); color: #04121c; border: none; }
+    button.ghost { background: transparent; }
+    button:disabled { opacity: .6; cursor: not-allowed; }
+
+    .help { color: var(--muted); font-size: .85rem; margin-top: 8px; }
+    .status { margin-top: 10px; font-size: .9rem; }
+    .status.ok { color: var(--ok); }
+    .status.err { color: var(--err); }
+
+    pre { margin: 0; padding: 12px; background: #0b1220; border: 1px solid var(--border); border-radius: 12px; overflow: auto; max-height: 360px; }
+
+    table { width: 100%; border-collapse: collapse; }
+    td, th { border-bottom: 1px solid var(--border); padding: 8px 6px; text-align: left; }
+    th { color: var(--muted); font-weight: 600; }
+
+    .img-wrap { margin-top: 12px; display: grid; place-items: center; }
+    .img-wrap img { max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 12px; background: #0b1220; }
+    .small { font-size: .8rem; color: var(--muted); }
+    .row > div .small { margin-top: 4px; }
+    .kbd { border: 1px solid var(--border); background: #0b1220; border-radius: 6px; padding: 0 6px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>Linear Regression API クライアント</h1>
+      <span class="badge">POST /api/v1/graph_engine/linear_regression</span>
+    </header>
+
+    <div class="grid">
+      <!-- 左：フォーム -->
+      <section class="card">
+        <h2>リクエスト作成</h2>
+        <div class="body">
+          <label for="endpoint">エンドポイント URL</label>
+          <input id="endpoint" type="text" value="https://ikeda042.homes/api/v1/graph_engine/linear_regression" />
+          <div class="small">必要に応じて差し替え可。CORS が許可されていることを確認してください。</div>
+
+          <label for="data">データ <span class="small">（<span class="kbd">x,y</span> を1行ずつ、または JSON 配列）</span></label>
+          <textarea id="data" placeholder="例:
+1,1
+2,1
+1,3
+2,2
+3,3
+4,4
+5,6
+5,6
+9,9"></textarea>
+          <div class="help">行形式：<span class="kbd">x,y</span> を改行区切りで入力。JSON 形式：<span class="kbd">[[1,1],[2,1],...]</span> も可。</div>
+
+          <div class="row3">
+            <div>
+              <label for="xlabel">x 軸ラベル</label>
+              <input id="xlabel" type="text" placeholder="x" value="x" />
+            </div>
+            <div>
+              <label for="ylabel">y 軸ラベル</label>
+              <input id="ylabel" type="text" placeholder="y" value="y" />
+            </div>
+            <div>
+              <label for="title">タイトル</label>
+              <input id="title" type="text" placeholder="回帰分析" value="回帰分析" />
+            </div>
+          </div>
+
+          <label style="display:flex; align-items:center; gap:8px; margin-top: 10px;">
+            <input id="show_stats" type="checkbox" checked /> 統計量（<span class="small">R² など</span>）を要求する（<span class="small">show_stats</span>）
+          </label>
+
+          <div class="actions">
+            <button id="btnExample" type="button">例データを挿入</button>
+            <button id="btnBuild" type="button" class="ghost">JSON をプレビュー</button>
+            <button id="btnSend" type="button" class="primary">送信（POST）</button>
+            <button id="btnClear" type="button">リセット</button>
+          </div>
+
+          <div class="help">※ 送信時は <span class="kbd">Content-Type: application/json</span> / <span class="kbd">Accept: application/json</span> を設定します。</div>
+
+          <div style="margin-top:12px">
+            <label>送信 JSON プレビュー</label>
+            <pre id="reqJson">{}</pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- 右：結果表示 -->
+      <section class="card">
+        <h2>レスポンス</h2>
+        <div class="body">
+          <div id="status" class="status">未送信</div>
+          <label>JSON</label>
+          <pre id="resJson">{}</pre>
+
+          <div id="statsBlock" style="display:none; margin-top:12px;">
+            <h3 style="margin:0 0 8px; font-size: 1rem;">主要統計（検出できた場合）</h3>
+            <table>
+              <tbody id="statsTable"></tbody>
+            </table>
+          </div>
+
+          <div id="imageBlock" class="img-wrap" style="display:none;">
+            <img id="plotImg" alt="回帰プロット" />
+            <div class="small">レスポンス内の画像情報を自動検出して表示しています。</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section class="card" style="margin-top:16px;">
+      <h2>使い方メモ</h2>
+      <div class="body">
+        <ul>
+          <li>データは <strong>行形式</strong>（<code>x,y</code> の改行区切り）または <strong>JSON 配列</strong>のどちらでも入力できます。</li>
+          <li>送信用 JSON は <code>{ data, xlabel, ylabel, title, show_stats }</code> で構成されます。</li>
+          <li>レスポンスは JSON をそのまま表示します。さらに、<em>傾き/切片/R²/RMSE/件数</em>などの代表的なキーが見つかれば表に抜き出します。</li>
+          <li>画像（プロット）が <em>URL</em> または <em>Base64</em> で返ってきた場合は、自動でプレビューします。</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const els = {
+      endpoint: document.getElementById('endpoint'),
+      data: document.getElementById('data'),
+      xlabel: document.getElementById('xlabel'),
+      ylabel: document.getElementById('ylabel'),
+      title: document.getElementById('title'),
+      showStats: document.getElementById('show_stats'),
+      btnExample: document.getElementById('btnExample'),
+      btnBuild: document.getElementById('btnBuild'),
+      btnSend: document.getElementById('btnSend'),
+      btnClear: document.getElementById('btnClear'),
+      reqJson: document.getElementById('reqJson'),
+      resJson: document.getElementById('resJson'),
+      status: document.getElementById('status'),
+      statsBlock: document.getElementById('statsBlock'),
+      statsTable: document.getElementById('statsTable'),
+      imageBlock: document.getElementById('imageBlock'),
+      plotImg: document.getElementById('plotImg'),
+    };
+
+    function setStatus(text, ok=false) {
+      els.status.textContent = text;
+      els.status.className = 'status ' + (ok ? 'ok' : 'err');
+    }
+
+    function setIdleStatus(text='未送信') {
+      els.status.textContent = text;
+      els.status.className = 'status';
+    }
+
+    function exampleText() {
+      return `1,1\n2,1\n1,3\n2,2\n3,3\n4,4\n5,6\n5,6\n9,9`;
+    }
+
+    function parseDataInput(raw) {
+      const t = raw.trim();
+      if (!t) return [];
+      // JSON モード
+      if (t.startsWith('[')) {
+        try {
+          const arr = JSON.parse(t);
+          if (!Array.isArray(arr)) throw new Error('data は配列である必要があります');
+          const out = arr.map((row, i) => {
+            if (!Array.isArray(row) || row.length < 2) throw new Error(`data[${i}] は [x,y] の配列である必要があります`);
+            const x = Number(row[0]);
+            const y = Number(row[1]);
+            if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error(`data[${i}] の x,y は数値である必要があります`);
+            return [x, y];
+          });
+          return out;
+        } catch (e) {
+          throw new Error('JSON 解析に失敗しました: ' + e.message);
+        }
+      }
+      // 行モード
+      const lines = t.split(/\r?\n/);
+      const pairs = [];
+      for (let i=0; i<lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue; // 空行スキップ
+        // コメント行 (#) は無視
+        if (line.startsWith('#')) continue;
+        // カンマ or 空白区切り
+        const parts = line.split(/[\s,]+/).filter(Boolean);
+        if (parts.length < 2) throw new Error(`${i+1} 行目: 'x,y' の形式で入力してください`);
+        const x = Number(parts[0]);
+        const y = Number(parts[1]);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error(`${i+1} 行目: x,y は数値である必要があります`);
+        pairs.push([x,y]);
+      }
+      return pairs;
+    }
+
+    function buildRequestBody() {
+      const data = parseDataInput(els.data.value);
+      return {
+        data,
+        xlabel: els.xlabel.value || 'x',
+        ylabel: els.ylabel.value || 'y',
+        title: els.title.value || '回帰分析',
+        show_stats: !!els.showStats.checked,
+      };
+    }
+
+    function previewRequest() {
+      try {
+        const body = buildRequestBody();
+        els.reqJson.textContent = JSON.stringify(body, null, 2);
+        setIdleStatus('プレビュー更新済み');
+      } catch (e) {
+        els.reqJson.textContent = '{}';
+        setStatus(e.message);
+      }
+    }
+
+    function clearOutputs() {
+      els.reqJson.textContent = '{}';
+      els.resJson.textContent = '{}';
+      els.statsBlock.style.display = 'none';
+      els.imageBlock.style.display = 'none';
+      els.plotImg.removeAttribute('src');
+      setIdleStatus();
+    }
+
+    function findCaseInsensitive(obj, keys) {
+      const map = new Map(Object.keys(obj).map(k => [k.toLowerCase(), k]));
+      for (const key of keys) {
+        const hit = map.get(key.toLowerCase());
+        if (hit !== undefined) return obj[hit];
+      }
+      return undefined;
+    }
+
+    function collectStats(obj) {
+      const entries = [];
+      const slope = findCaseInsensitive(obj, ['slope', 'coef', 'coefficient', 'beta1']);
+      const intercept = findCaseInsensitive(obj, ['intercept', 'bias', 'beta0']);
+      const r2 = findCaseInsensitive(obj, ['r2', 'r_squared', 'r^2']);
+      const rmse = findCaseInsensitive(obj, ['rmse', 'root_mean_squared_error']);
+      const n = findCaseInsensitive(obj, ['n', 'count', 'samples']);
+      if (slope !== undefined) entries.push(['傾き (slope)', String(slope)]);
+      if (intercept !== undefined) entries.push(['切片 (intercept)', String(intercept)]);
+      if (r2 !== undefined) entries.push(['決定係数 (R²)', String(r2)]);
+      if (rmse !== undefined) entries.push(['RMSE', String(rmse)]);
+      if (n !== undefined) entries.push(['データ数', String(n)]);
+      return entries;
+    }
+
+    function tryFindImage(obj) {
+      // 1) 典型キー
+      const keyCandidates = ['plot_url','image_url','url','image','plot','png','svg','image_base64','plot_base64','png_base64'];
+      for (const k of keyCandidates) {
+        const v = findCaseInsensitive(obj, [k]);
+        if (typeof v === 'string') {
+          const src = normalizeImageSrc(v);
+          if (src) return src;
+        }
+      }
+      // 2) 深い探索：Base64/URL らしき文字列を拾う
+      const queue = [obj];
+      while (queue.length) {
+        const cur = queue.shift();
+        if (cur && typeof cur === 'object') {
+          for (const v of Object.values(cur)) {
+            if (typeof v === 'string') {
+              const src = normalizeImageSrc(v);
+              if (src) return src;
+            } else if (v && typeof v === 'object') {
+              queue.push(v);
+            }
+          }
+        }
+      }
+      return null;
+    }
+
+    function normalizeImageSrc(val) {
+      const s = String(val).trim();
+      // URL 形式
+      if (/^https?:\/\//i.test(s)) return s;
+      // data: URL 既に付与
+      if (s.startsWith('data:image/')) return s;
+      // PNG Base64 の先頭シグネチャ
+      if (/^[A-Za-z0-9+/=]+$/.test(s) && s.length > 100 && s.startsWith('iVBORw0KGgo')) {
+        return 'data:image/png;base64,' + s;
+      }
+      // SVG (Base64) の簡易検出
+      if (/^[A-Za-z0-9+/=]+$/.test(s) && s.length > 100 && s.includes('PHN2Zy')) { // '<svg' の base64 断片
+        return 'data:image/svg+xml;base64,' + s;
+      }
+      return null;
+    }
+
+    async function sendRequest() {
+      els.btnSend.disabled = true;
+      try {
+        const body = buildRequestBody();
+        els.reqJson.textContent = JSON.stringify(body, null, 2);
+
+        const res = await fetch(els.endpoint.value, {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        });
+
+        const text = await res.text();
+        let json;
+        try { json = JSON.parse(text); }
+        catch { json = { raw: text }; }
+
+        els.resJson.textContent = JSON.stringify(json, null, 2);
+        if (res.ok) {
+          setStatus(`成功: ${res.status} ${res.statusText || ''}`.trim(), true);
+        } else {
+          setStatus(`エラー: ${res.status} ${res.statusText || ''}`.trim(), false);
+        }
+
+        // 統計の抽出
+        const stats = (json && typeof json === 'object') ? collectStats(json) : [];
+        if (stats.length) {
+          els.statsTable.innerHTML = stats.map(([k,v]) => `<tr><th>${k}</th><td>${escapeHtml(v)}</td></tr>`).join('');
+          els.statsBlock.style.display = '';
+        } else {
+          els.statsBlock.style.display = 'none';
+          els.statsTable.innerHTML = '';
+        }
+
+        // 画像の抽出
+        const imgSrc = (json && typeof json === 'object') ? tryFindImage(json) : null;
+        if (imgSrc) {
+          els.plotImg.src = imgSrc;
+          els.imageBlock.style.display = '';
+        } else {
+          els.imageBlock.style.display = 'none';
+          els.plotImg.removeAttribute('src');
+        }
+
+      } catch (e) {
+        setStatus('送信に失敗しました: ' + e.message);
+      } finally {
+        els.btnSend.disabled = false;
+      }
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    // 初期化
+    (function init() {
+      els.data.value = exampleText();
+      previewRequest();
+
+      els.btnExample.addEventListener('click', () => {
+        els.data.value = exampleText();
+        previewRequest();
+      });
+      els.btnBuild.addEventListener('click', previewRequest);
+      els.btnSend.addEventListener('click', sendRequest);
+      els.btnClear.addEventListener('click', () => {
+        els.data.value = '';
+        els.xlabel.value = 'x';
+        els.ylabel.value = 'y';
+        els.title.value = '回帰分析';
+        els.showStats.checked = true;
+        clearOutputs();
+      });
+
+      // 入力のたびに JSON プレビューを更新（重い場合は debounce 推奨）
+      [els.data, els.xlabel, els.ylabel, els.title, els.showStats].forEach(el => {
+        el.addEventListener('input', () => {
+          try { previewRequest(); } catch { /* noop */ }
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
