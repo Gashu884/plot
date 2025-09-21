@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Linear Regression フロントエンド</title>
+  <title>Linear Regression フロントエンド v2</title>
   <style>
     :root {
       --bg: #0f172a;      /* slate-900 */
@@ -23,7 +23,7 @@
     }
     .container { max-width: 1080px; margin: 24px auto; padding: 0 16px; }
     header { display:flex; align-items:center; gap:12px; margin-bottom: 16px; }
-    header h1 { font-size: 1.5rem; margin: 0; letter-spacing: .02em; }
+    header h1 { font-size: 1.4rem; margin: 0; letter-spacing: .02em; }
     header .badge { font-size: .8rem; color: var(--muted); border: 1px solid var(--border); padding: 2px 8px; border-radius: 999px; }
 
     .grid { display: grid; grid-template-columns: 1.2fr .8fr; gap: 16px; }
@@ -34,8 +34,8 @@
     .card .body { padding: 16px; }
 
     label { display:block; font-size: .9rem; color: var(--muted); margin: 12px 0 6px; }
-    input[type="text"], textarea { width: 100%; background: #0b1220; color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; outline: none; transition: border .2s ease; }
-    input[type="text"]:focus, textarea:focus { border-color: var(--accent); }
+    input[type="text"], textarea, select { width: 100%; background: #0b1220; color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; outline: none; transition: border .2s ease; }
+    input[type="text"]:focus, textarea:focus, select:focus { border-color: var(--accent); }
     textarea { resize: vertical; min-height: 160px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: .95rem; line-height: 1.4; }
 
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -68,7 +68,7 @@
 <body>
   <div class="container">
     <header>
-      <h1>Linear Regression API クライアント</h1>
+      <h1>Linear Regression API クライアント v2</h1>
       <span class="badge">POST /api/v1/graph_engine/linear_regression</span>
     </header>
 
@@ -82,16 +82,7 @@
           <div class="small">必要に応じて差し替え可。CORS が許可されていることを確認してください。</div>
 
           <label for="data">データ <span class="small">（<span class="kbd">x,y</span> を1行ずつ、または JSON 配列）</span></label>
-          <textarea id="data" placeholder="例:
-1,1
-2,1
-1,3
-2,2
-3,3
-4,4
-5,6
-5,6
-9,9"></textarea>
+          <textarea id="data" placeholder="例:\n1,1\n2,1\n1,3\n2,2\n3,3\n4,4\n5,6\n5,6\n9,9"></textarea>
           <div class="help">行形式：<span class="kbd">x,y</span> を改行区切りで入力。JSON 形式：<span class="kbd">[[1,1],[2,1],...]</span> も可。</div>
 
           <div class="row3">
@@ -148,6 +139,15 @@
             <img id="plotImg" alt="回帰プロット" />
             <div class="small">レスポンス内の画像情報を自動検出して表示しています。</div>
           </div>
+
+          <div id="imageCandidateBlock" style="display:none; margin-top:12px;">
+            <label>画像候補（自動検出で表示できない場合）</label>
+            <select id="candidateSelect"></select>
+            <div class="actions">
+              <button id="btnUseCandidate" type="button">この値を画像として表示</button>
+            </div>
+            <div class="small">レスポンス中の文字列から URL / Base64 らしき値を候補として抽出しています。相対パスにも対応。</div>
+          </div>
         </div>
       </section>
     </div>
@@ -159,7 +159,7 @@
           <li>データは <strong>行形式</strong>（<code>x,y</code> の改行区切り）または <strong>JSON 配列</strong>のどちらでも入力できます。</li>
           <li>送信用 JSON は <code>{ data, xlabel, ylabel, title, show_stats }</code> で構成されます。</li>
           <li>レスポンスは JSON をそのまま表示します。さらに、<em>傾き/切片/R²/RMSE/件数</em>などの代表的なキーが見つかれば表に抜き出します。</li>
-          <li>画像（プロット）が <em>URL</em> または <em>Base64</em> で返ってきた場合は、自動でプレビューします。</li>
+          <li>画像（プロット）が <em>URL</em> または <em>Base64</em> で返ってきた場合は、自動でプレビューします。相対パスや JPEG/GIF/WebP、空白混じりのBase64にも対応しました。</li>
         </ul>
       </div>
     </section>
@@ -184,6 +184,9 @@
       statsTable: document.getElementById('statsTable'),
       imageBlock: document.getElementById('imageBlock'),
       plotImg: document.getElementById('plotImg'),
+      imageCandidateBlock: document.getElementById('imageCandidateBlock'),
+      candidateSelect: document.getElementById('candidateSelect'),
+      btnUseCandidate: document.getElementById('btnUseCandidate'),
     };
 
     function setStatus(text, ok=false) {
@@ -226,9 +229,7 @@
       for (let i=0; i<lines.length; i++) {
         const line = lines[i].trim();
         if (!line) continue; // 空行スキップ
-        // コメント行 (#) は無視
-        if (line.startsWith('#')) continue;
-        // カンマ or 空白区切り
+        if (line.startsWith('#')) continue; // コメント行スキップ
         const parts = line.split(/[\s,]+/).filter(Boolean);
         if (parts.length < 2) throw new Error(`${i+1} 行目: 'x,y' の形式で入力してください`);
         const x = Number(parts[0]);
@@ -266,7 +267,9 @@
       els.resJson.textContent = '{}';
       els.statsBlock.style.display = 'none';
       els.imageBlock.style.display = 'none';
+      els.imageCandidateBlock.style.display = 'none';
       els.plotImg.removeAttribute('src');
+      els.candidateSelect.innerHTML = '';
       setIdleStatus();
     }
 
@@ -294,27 +297,66 @@
       return entries;
     }
 
-    function tryFindImage(obj) {
+    function normalizeImageSrc(val, baseURL) {
+      if (val == null) return null;
+      const s0 = String(val).trim();
+      if (!s0) return null;
+
+      // 生の <svg ...> テキスト
+      if (s0.startsWith('<svg')) {
+        try { return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s0); } catch { /* noop */ }
+      }
+
+      // 既に data: URL
+      if (/^data:image\//i.test(s0)) return s0;
+
+      // URL 形式（http/https/プロトコル相対//）
+      if (/^(https?:)?\/\//i.test(s0)) {
+        try { return new URL(s0, baseURL).href; } catch { return null; }
+      }
+
+      // 拡張子での判定（相対パス対応）
+      if (/\.(png|jpg|jpeg|gif|webp|svg)(\?.*)?$/i.test(s0)) {
+        try { return new URL(s0, baseURL).href; } catch { return null; }
+      }
+
+      // Base64 らしき文字列（空白混入を許容）
+      const b = s0.replace(/\s+/g, '');
+      const looksB64 = /^[A-Za-z0-9+/=]+$/.test(b) && b.length > 80;
+      if (looksB64) {
+        const head = b.slice(0, 12);
+        if (head.startsWith('iVBORw0KGgo')) return 'data:image/png;base64,' + b;   // PNG
+        if (head.startsWith('/9j/'))        return 'data:image/jpeg;base64,' + b;  // JPEG
+        if (head.startsWith('R0lGOD'))      return 'data:image/gif;base64,' + b;   // GIF
+        if (head.startsWith('UklGR'))       return 'data:image/webp;base64,' + b;  // WebP
+        if (b.includes('PHN2Zy'))           return 'data:image/svg+xml;base64,' + b; // SVG
+      }
+
+      return null;
+    }
+
+    function tryFindImage(obj, baseURL) {
       // 1) 典型キー
-      const keyCandidates = ['plot_url','image_url','url','image','plot','png','svg','image_base64','plot_base64','png_base64'];
+      const keyCandidates = ['plot_url','image_url','url','image','plot','png','jpg','jpeg','svg','image_base64','plot_base64','png_base64','jpeg_base64','jpg_base64','svg_base64','file','file_url','path','figure','figure_url','chart','chart_url'];
       for (const k of keyCandidates) {
         const v = findCaseInsensitive(obj, [k]);
         if (typeof v === 'string') {
-          const src = normalizeImageSrc(v);
+          const src = normalizeImageSrc(v, baseURL);
           if (src) return src;
         }
       }
-      // 2) 深い探索：Base64/URL らしき文字列を拾う
-      const queue = [obj];
+      // 2) 深い探索：Base64/URL/拡張子 らしき文字列を拾う
+      const queue = [{val: obj, path: '$'}];
       while (queue.length) {
-        const cur = queue.shift();
-        if (cur && typeof cur === 'object') {
-          for (const v of Object.values(cur)) {
+        const {val, path} = queue.shift();
+        if (val && typeof val === 'object') {
+          for (const [k, v] of Object.entries(val)) {
+            const p = path + '.' + k;
             if (typeof v === 'string') {
-              const src = normalizeImageSrc(v);
+              const src = normalizeImageSrc(v, baseURL);
               if (src) return src;
             } else if (v && typeof v === 'object') {
-              queue.push(v);
+              queue.push({val: v, path: p});
             }
           }
         }
@@ -322,21 +364,33 @@
       return null;
     }
 
-    function normalizeImageSrc(val) {
-      const s = String(val).trim();
-      // URL 形式
-      if (/^https?:\/\//i.test(s)) return s;
-      // data: URL 既に付与
-      if (s.startsWith('data:image/')) return s;
-      // PNG Base64 の先頭シグネチャ
-      if (/^[A-Za-z0-9+/=]+$/.test(s) && s.length > 100 && s.startsWith('iVBORw0KGgo')) {
-        return 'data:image/png;base64,' + s;
+    function extractStringCandidates(obj) {
+      const out = [];
+      const queue = [{val: obj, path: '$'}];
+      const seen = new Set();
+      while (queue.length) {
+        const {val, path} = queue.shift();
+        if (val && typeof val === 'object') {
+          for (const [k, v] of Object.entries(val)) {
+            const p = path + '.' + k;
+            if (typeof v === 'string') {
+              const s = v.trim();
+              const isData = /^data:image\//i.test(s);
+              const isUrl = /^(https?:)?\/\//i.test(s);
+              const isExt = /\.(png|jpg|jpeg|gif|webp|svg)(\?.*)?$/i.test(s);
+              const sb = s.replace(/\s+/g,'');
+              const isB64ish = /^[A-Za-z0-9+/=]+$/.test(sb) && sb.length > 120;
+              if (isData || isUrl || isExt || isB64ish) {
+                const key = p + '|' + s.slice(0,50);
+                if (!seen.has(key)) { seen.add(key); out.push({path: p, value: s}); }
+              }
+            } else if (v && typeof v === 'object') {
+              queue.push({val: v, path: p});
+            }
+          }
+        }
       }
-      // SVG (Base64) の簡易検出
-      if (/^[A-Za-z0-9+/=]+$/.test(s) && s.length > 100 && s.includes('PHN2Zy')) { // '<svg' の base64 断片
-        return 'data:image/svg+xml;base64,' + s;
-      }
-      return null;
+      return out.slice(0, 50);
     }
 
     async function sendRequest() {
@@ -366,6 +420,9 @@
           setStatus(`エラー: ${res.status} ${res.statusText || ''}`.trim(), false);
         }
 
+        // ベースURL（相対パス解決用）
+        let baseURL; try { baseURL = new URL(els.endpoint.value); } catch { baseURL = undefined; }
+
         // 統計の抽出
         const stats = (json && typeof json === 'object') ? collectStats(json) : [];
         if (stats.length) {
@@ -376,14 +433,27 @@
           els.statsTable.innerHTML = '';
         }
 
-        // 画像の抽出
-        const imgSrc = (json && typeof json === 'object') ? tryFindImage(json) : null;
+        // 画像の自動抽出
+        const imgSrc = (json && typeof json === 'object') ? tryFindImage(json, baseURL) : null;
         if (imgSrc) {
           els.plotImg.src = imgSrc;
           els.imageBlock.style.display = '';
         } else {
           els.imageBlock.style.display = 'none';
           els.plotImg.removeAttribute('src');
+        }
+
+        // 画像候補の抽出（手動切替用）
+        const candidates = (json && typeof json === 'object') ? extractStringCandidates(json) : [];
+        if (candidates.length) {
+          els.candidateSelect.innerHTML = candidates.map(({path, value}) => {
+            const preview = (''+value).replace(/\s+/g,' ').slice(0,100);
+            return `<option value="${encodeURIComponent(value)}" data-path="${escapeHtml(path)}">${escapeHtml(path)} — ${escapeHtml(preview)}</option>`;
+          }).join('');
+          els.imageCandidateBlock.style.display = '';
+        } else {
+          els.imageCandidateBlock.style.display = 'none';
+          els.candidateSelect.innerHTML = '';
         }
 
       } catch (e) {
@@ -402,7 +472,6 @@
         .replaceAll("'", '&#39;');
     }
 
-    // 初期化
     (function init() {
       els.data.value = exampleText();
       previewRequest();
@@ -421,6 +490,24 @@
         els.showStats.checked = true;
         clearOutputs();
       });
+
+      // 画像候補からの手動表示
+      if (els.btnUseCandidate) {
+        els.btnUseCandidate.addEventListener('click', () => {
+          const opt = els.candidateSelect.options[els.candidateSelect.selectedIndex];
+          if (!opt) return;
+          const val = decodeURIComponent(opt.value);
+          let baseURL; try { baseURL = new URL(els.endpoint.value); } catch { baseURL = undefined; }
+          const src = normalizeImageSrc(val, baseURL);
+          if (src) {
+            els.plotImg.src = src;
+            els.imageBlock.style.display = '';
+            setIdleStatus('候補から画像を表示しました');
+          } else {
+            setStatus('候補の値は画像として解釈できませんでした');
+          }
+        });
+      }
 
       // 入力のたびに JSON プレビューを更新（重い場合は debounce 推奨）
       [els.data, els.xlabel, els.ylabel, els.title, els.showStats].forEach(el => {
